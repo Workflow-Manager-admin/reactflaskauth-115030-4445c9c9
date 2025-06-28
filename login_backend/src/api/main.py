@@ -1,7 +1,7 @@
 import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi import Body, status
+from fastapi import Body, status, Request
 from pydantic import BaseModel, EmailStr, Field
 from typing import Dict
 from threading import Lock
@@ -183,7 +183,7 @@ async def register_endpoint(
 
     logger.info("--- REGISTER ENDPOINT CALLED ---")
     # Log the full payload received
-    logger.info("Raw registration request payload: %s", reg_req)
+    logger.info("Raw registration request payload (RegisterRequest): %s", reg_req)
     # Log current registered users before registration
     logger.info("Registered users BEFORE: %s", _registered_users)
 
@@ -219,6 +219,110 @@ async def register_endpoint(
                 message="This email is already registered."
             )
         # Store user (password must meet min_length=6, enforced by Pydantic)
+        _registered_users[normalized_email] = reg_req.password
+        logger.info(
+            "User %s registered successfully.",
+            normalized_email
+        )
+        logger.info("Registered users AFTER: %s", _registered_users)
+
+    return RegisterResponse(
+        success=True,
+        message="Registration successful."
+    )
+
+
+# PUBLIC_INTERFACE
+@app.post(
+    "/api/register-debug",
+    response_model=RegisterResponse,
+    status_code=status.HTTP_200_OK,
+    tags=["Authentication"],
+    summary="Register a new user account (debug logging version)",
+    description=(
+        "**Debug version** of registration endpoint. "
+        "Logs the incoming raw JSON body and shows matched/mismatched fields "
+        "for troubleshooting. "
+        "All behaviors except logging are identical to "
+        "`/api/register`."
+    ),
+    responses={
+        200: {
+            "description": "Registration result (success or error)",
+            "model": RegisterResponse,
+        },
+        400: {
+            "description": "Invalid input or duplicate email",
+        }
+    }
+)
+async def register_endpoint_debug(
+    request: Request,
+    reg_req: RegisterRequest = Body(
+        ...,
+        description="Registration request containing email and password"
+    ),
+) -> RegisterResponse:
+    """
+    Handles user registration with **extra logging** of the raw incoming body for debugging field names and request parsing.
+    Otherwise identical to /api/register.
+
+    Args:
+        request (Request): The incoming FastAPI request object (for logging raw body).
+        reg_req (RegisterRequest): The registration fields.
+
+    Returns:
+        RegisterResponse: Success or error message.
+    """
+    logger.info("--- REGISTER ENDPOINT (DEBUG) CALLED ---")
+
+    # Log the raw body (will work as long as this is the first body read!)
+    raw_bytes = await request.body()
+    try:
+        raw_str = raw_bytes.decode("utf-8")
+    except Exception:
+        raw_str = str(raw_bytes)
+    logger.info("Raw JSON received: %s", raw_str)
+
+    try:
+        import json
+        json_obj = json.loads(raw_str)
+        logger.info("Parsed incoming fields: %s", list(json_obj.keys()))
+    except Exception as e:
+        logger.error("Could not parse body as JSON: %s", e)
+
+    logger.info("Parsed RegisterRequest model: %s", reg_req.dict())
+
+    # Duplicate logic from original register handler:
+    normalized_email = reg_req.email.lower()
+    logger.info("Attempting registration for: %s", normalized_email)
+    logger.info("Registered users BEFORE: %s", _registered_users)
+
+    if normalized_email == DUMMY_EMAIL.lower():
+        logger.warning(
+            "Registration attempt with dummy email: %s", normalized_email
+        )
+        logger.info(
+            "Registered users AFTER (no change): %s", _registered_users
+        )
+        return RegisterResponse(
+            success=False,
+            message="This email is already registered (dummy account)."
+        )
+
+    with _reg_lock:
+        logger.info("Registered user keys: %s", list(_registered_users.keys()))
+        if normalized_email in (mail.lower() for mail in _registered_users.keys()):
+            logger.warning(
+                "Duplicate registration attempt: %s", normalized_email
+            )
+            logger.info(
+                "Registered users AFTER (no change): %s", _registered_users
+            )
+            return RegisterResponse(
+                success=False,
+                message="This email is already registered."
+            )
         _registered_users[normalized_email] = reg_req.password
         logger.info(
             "User %s registered successfully.",
