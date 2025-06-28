@@ -1,3 +1,4 @@
+import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import Body, status
@@ -8,8 +9,10 @@ from threading import Lock
 app = FastAPI(
     title="Login Backend API",
     description=(
-        "API for login authentication and registration. Accepts email and password, "
-        "validates against static and in-memory accounts, and returns JSON results."
+        "API for login authentication and registration. "
+        "Accepts email and password, "
+        "validates against static and in-memory accounts, "
+        "and returns JSON results."
     ),
     version="1.0.0",
     openapi_tags=[
@@ -32,7 +35,7 @@ app.add_middleware(
 DUMMY_EMAIL = "test@example.com"
 DUMMY_PASSWORD = "password123"
 
-# In-memory storage for registered users
+# In-memory storage for registered users (emails stored in lowercase for case-insensitive comparison)
 _registered_users: Dict[str, str] = {}
 _reg_lock = Lock()
 
@@ -129,6 +132,11 @@ async def login_endpoint(
     return LoginResponse(success=False, message="Invalid email or password.")
 
 
+# Setup basic logging (you can adjust level or handlers as needed)
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("register_logger")
+
+
 # PUBLIC_INTERFACE
 @app.post(
     "/api/register",
@@ -160,7 +168,7 @@ async def register_endpoint(
     Handles user registration.
 
     Validates email format and minimum password length (≥ 6).
-    Prevents registration if the email is already registered (either as dummy or in-memory).
+    Prevents registration if the email is already registered (either as dummy or in-memory, case-insensitive).
     Stores accounts in-memory (lost on backend restart).
 
     Args:
@@ -169,20 +177,35 @@ async def register_endpoint(
     Returns:
         RegisterResponse: Success or error message.
     """
-    if reg_req.email == DUMMY_EMAIL:
+    # Normalize email to lowercase for consistent duplicate checks
+    normalized_email = reg_req.email.lower()
+
+    logger.info(f"Attempting registration for: {normalized_email}")
+
+    if normalized_email == DUMMY_EMAIL.lower():
+        logger.warning(
+            f"Registration attempt with dummy email: {normalized_email}"
+        )
         return RegisterResponse(
             success=False,
             message="This email is already registered (dummy account)."
         )
 
     with _reg_lock:
-        if reg_req.email in _registered_users:
+        if normalized_email in (mail.lower() for mail in _registered_users.keys()):
+            logger.warning(
+                f"Duplicate registration attempt: {normalized_email}"
+            )
             return RegisterResponse(
                 success=False,
                 message="This email is already registered."
             )
         # Store user (password must meet min_length=6, enforced by Pydantic)
-        _registered_users[reg_req.email] = reg_req.password
+        _registered_users[normalized_email] = reg_req.password
+        logger.info(
+            "User %s registered successfully.",
+            normalized_email
+        )
 
     return RegisterResponse(
         success=True,
