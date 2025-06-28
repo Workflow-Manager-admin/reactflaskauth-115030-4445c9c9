@@ -35,7 +35,8 @@ app.add_middleware(
 DUMMY_EMAIL = "test@example.com"
 DUMMY_PASSWORD = "password123"
 
-# In-memory storage for registered users (emails stored in lowercase for case-insensitive comparison)
+# In-memory storage for registered users
+# (emails stored in lowercase for case-insensitive comparison)
 _registered_users: Dict[str, str] = {}
 _reg_lock = Lock()
 
@@ -145,7 +146,7 @@ logger = logging.getLogger("register_logger")
     tags=["Authentication"],
     summary="Register a new user account",
     description=(
-        "Accepts email and password (len ≥ 6), performs basic validation, stores in memory, "
+        "Accepts email and password (len \u2265 6), performs basic validation, stores in memory, "
         "prevents duplicates. Returns a clear success or error message."
     ),
     responses={
@@ -167,8 +168,9 @@ async def register_endpoint(
     """
     Handles user registration.
 
-    Validates email format and minimum password length (≥ 6).
-    Prevents registration if the email is already registered (either as dummy or in-memory, case-insensitive).
+    Validates email format and minimum password length (\u2265 6).
+    Prevents registration if the email is already registered (either as dummy or in-memory,
+    case-insensitive).
     Stores accounts in-memory (lost on backend restart).
 
     Args:
@@ -177,14 +179,25 @@ async def register_endpoint(
     Returns:
         RegisterResponse: Success or error message.
     """
+    # Extra logging for debugging registration flow
+
+    logger.info("--- REGISTER ENDPOINT CALLED ---")
+    # Log the full payload received
+    logger.info("Raw registration request payload: %s", reg_req)
+    # Log current registered users before registration
+    logger.info("Registered users BEFORE: %s", _registered_users)
+
     # Normalize email to lowercase for consistent duplicate checks
     normalized_email = reg_req.email.lower()
 
-    logger.info(f"Attempting registration for: {normalized_email}")
+    logger.info("Attempting registration for: %s", normalized_email)
 
     if normalized_email == DUMMY_EMAIL.lower():
         logger.warning(
-            f"Registration attempt with dummy email: {normalized_email}"
+            "Registration attempt with dummy email: %s", normalized_email
+        )
+        logger.info(
+            "Registered users AFTER (no change): %s", _registered_users
         )
         return RegisterResponse(
             success=False,
@@ -192,9 +205,14 @@ async def register_endpoint(
         )
 
     with _reg_lock:
+        # Log the keys being compared
+        logger.info("Registered user keys: %s", list(_registered_users.keys()))
         if normalized_email in (mail.lower() for mail in _registered_users.keys()):
             logger.warning(
-                f"Duplicate registration attempt: {normalized_email}"
+                "Duplicate registration attempt: %s", normalized_email
+            )
+            logger.info(
+                "Registered users AFTER (no change): %s", _registered_users
             )
             return RegisterResponse(
                 success=False,
@@ -206,6 +224,7 @@ async def register_endpoint(
             "User %s registered successfully.",
             normalized_email
         )
+        logger.info("Registered users AFTER: %s", _registered_users)
 
     return RegisterResponse(
         success=True,
