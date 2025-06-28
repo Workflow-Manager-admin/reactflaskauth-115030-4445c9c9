@@ -1,0 +1,4 @@
+{
+    "command": "pytest",
+    "working_directory": "/home/kavia/workspace/code-generation/reactflaskauth-115030-4445c9c9/login_backend"
+}
